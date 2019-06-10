@@ -19,10 +19,10 @@ class SolutionModel(nn.Module):
         self.linear2 = nn.Linear(self.hidden_size, output_size)
 
     def forward(self, x):
-        x = self.linear1(x)
-        x = torch.sigmoid(x)
-        x = self.linear2(x)
-        x = torch.sigmoid(x)
+        x = nn.Sequential(self.linear1,
+                      nn.ReLU(),
+                      self.linear2,
+                      nn.Sigmoid()).forward(x)
         return x
 
     def calc_error(self, output, target):
@@ -36,9 +36,9 @@ class SolutionModel(nn.Module):
 class Solution():
     def __init__(self):
         # Control speed of learning
-        self.learning_rate = 0.00001
+        self.learning_rate = 1.1
         # Control number of hidden neurons
-        self.hidden_size = 1
+        self.hidden_size = 24
 
         # Grid search settings, see grid_search_tutorial
         self.learning_rate_grid = [0.001, 0.01, 0.1]
@@ -63,7 +63,7 @@ class Solution():
             # Report step, so we know how many steps
             context.increase_step()
             # model.parameters()...gradient set to zero
-            optimizer.zero_grad()
+            #optimizer.zero_grad()
             # evaluate model => model.forward(data)
             output = model(train_data)
             # if x < 0.5 predict 0 else predict 1
