@@ -17,7 +17,7 @@ class SolutionModel(nn.Module):
     def __init__(self, input_size, output_size, solution):
         super(SolutionModel, self).__init__()
         self.input_size = input_size
-        sm.SolutionManager.print_hint("Hint[1]: Increase hidden size")
+        # sm.SolutionManager.print_hint("Hint[1]: Increase hidden size")
         self.hidden_size = solution.hidden_size
         self.linear1 = nn.Linear(input_size, self.hidden_size)
         self.linear2 = nn.Linear(self.hidden_size, output_size)
@@ -25,7 +25,7 @@ class SolutionModel(nn.Module):
     
     def forward(self, x):
         x = nn.Sequential(self.linear1,
-                      nn.LeakyReLU(),
+                      nn.ReLU(),
                       self.linear2,
                       nn.Sigmoid()
             ).forward(x)
@@ -33,7 +33,8 @@ class SolutionModel(nn.Module):
 
     def calc_error(self, output, target):
         # This is loss function
-        result = (-1.0 * (target * torch.log(output) + (1.0 - target) * torch.log(1.0 - output))).sum()
+        result = nn.BCELoss()(output, target)
+        # result = (-1.0 * (target * torch.log(output) + (1.0 - target) * torch.log(1.0 - output))).sum()
         # result = ((output-target)**2).sum()
         return  result
 
@@ -44,22 +45,23 @@ class SolutionModel(nn.Module):
 class Solution():
     def __init__(self):
         # Control speed of learning
-        self.learning_rate = 0.043
-        self.weight_decay = 0.01
-        self.momentum = 0.1
+        self.learning_rate = 2
+        self.weight_decay = 0
+        self.momentum = 0.9
         # Control number of hidden neurons
         self.hidden_size = 95
         
 
         # Grid search settings, see grid_search_tutorial
-        self.learning_rate_grid = [0.01, 0.001, 0.0001]
-        self.hidden_size_grid = [20, 24, 28, 30]
+        self.momentum_grid = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+        self.learning_rate_grid = [ 0.01, 0.001, 0.1,  1.0, 3.0, 3.5, 3.7] 
+        self.hidden_size_grid = [95]
         # grid search will initialize this field
         self.grid_search = None
         # grid search will initialize this field
         self.iter = 0
         # This fields indicate how many times to run with same arguments
-        self.iter_number = 2
+        self.iter_number = 3
 
     # Return trained model
     def train_model(self, train_data, train_target, context):
@@ -83,22 +85,22 @@ class Solution():
                 m.bias.data.fill_(0.001)
 
         # Uncommend next line to understand grid search
-        # return self.grid_search_tutorial()
+        # self.grid_search_tutorial()
         # Model represent our neural network
 
         model = SolutionModel(train_data.size(1), train_target.size(1), self)
-        model.apply(weights_init_uniform_rule)
+        # model.apply(weights_init_uniform_rule)
 
         # Optimizer used for training neural network
-        sm.SolutionManager.print_hint("Hint[2]: Learning rate is too small", context.step)
-        optimizer = optim.Adagrad(model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        # sm.SolutionManager.print_hint("Hint[2]: Learning rate is too small", context.step)
+        optimizer = optim.SGD(model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay, momentum=self.momentum)
         # model.parameters()...gradient set to zero
         # optimizer.zero_grad()
         while True:
             # Report step, so we know how many steps
             context.increase_step()
             # model.parameters()...gradient set to zero
-            # optimizer.zero_grad()
+            optimizer.zero_grad()
 
             # evaluate model => model.forward(data)
 
@@ -139,13 +141,13 @@ class Solution():
         # During grid search every possible combination in field_grid, train_model will be called
         # iter_number times. This can be used for automatic parameters tunning.
         if self.grid_search:
-            print("[HelloXor] learning_rate={} iter={}".format(self.learning_rate, self.iter))
+            # print("[HelloXor] learning_rate={} iter={}".format(self.learning_rate, self.iter))
             self.grid_search.add_result('iter', self.iter)
             if self.iter == self.iter_number-1:
-                print("[HelloXor] chose_str={}".format(self.grid_search.choice_str))
-                print("[HelloXor] iters={}".format(self.grid_search.get_results('iter')))
+                # print("[HelloXor] chose_str={}".format(self.grid_search.choice_str))
+                # print("[HelloXor] iters={}".format(self.grid_search.get_results('iter')))
                 stats = self.grid_search.get_stats('iter')
-                print("[HelloXor] Mean={} Std={}".format(stats[0], stats[1]))
+                # print("[HelloXor] Mean={} Std={}".format(stats[0], stats[1]))
         else:
             print("Enable grid search: See run_grid_search in the end of file")
             exit(0)
@@ -196,7 +198,7 @@ run_grid_search = False
 # Uncomment next line if you want to run grid search
 # run_grid_search = True
 if run_grid_search:
-    gs.GridSearch().run(Config(), case_number=1, random_order=False, verbose=False)
+    gs.GridSearch().run(Config(), case_number=-1, random_order=False, verbose=True)
 else:
     # If you want to run specific case, put number here
     sm.SolutionManager().run(Config(), case_number=-1)
