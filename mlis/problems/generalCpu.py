@@ -47,21 +47,25 @@ class Solution():
         # Control speed of learning
         self.learning_rate = 2
         self.weight_decay = 0
-        self.momentum = 0.9
+        self.momentum = 0.95
+        self.coef = 0.99
+        self.step = 4
         # Control number of hidden neurons
         self.hidden_size = 95
         
 
         # Grid search settings, see grid_search_tutorial
-        self.momentum_grid = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
-        self.learning_rate_grid = [ 0.01, 0.001, 0.1,  1.0, 3.0, 3.5, 3.7] 
-        self.hidden_size_grid = [95]
+        self.coef_grid = [0.95, 0.99]
+        self.step_grid = [3, 4]
+        self.momentum_grid = [0.85, 0.95]
+        self.learning_rate_grid = [0.1, 0.5, 0.9, 1.5, 2, 2.5]
+        self.hidden_size_grid = [85, 95]
         # grid search will initialize this field
         self.grid_search = None
         # grid search will initialize this field
         self.iter = 0
         # This fields indicate how many times to run with same arguments
-        self.iter_number = 3
+        self.iter_number = 1
 
     # Return trained model
     def train_model(self, train_data, train_target, context):
@@ -94,6 +98,7 @@ class Solution():
         # Optimizer used for training neural network
         # sm.SolutionManager.print_hint("Hint[2]: Learning rate is too small", context.step)
         optimizer = optim.SGD(model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay, momentum=self.momentum)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, self.step, self.coef)
         # model.parameters()...gradient set to zero
         # optimizer.zero_grad()
         while True:
