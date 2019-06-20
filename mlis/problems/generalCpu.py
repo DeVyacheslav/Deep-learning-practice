@@ -52,7 +52,7 @@ class Solution():
         self.algo_name = 'adadelta'
         self.mini_batch = False
         # Control speed of learning
-        self.learning_rate = 5
+        self.learning_rate = 8.5
         self.weight_decay = 0
         self.momentum = 0.95
         self.coef = 0.99
