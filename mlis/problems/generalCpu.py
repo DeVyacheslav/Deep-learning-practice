@@ -27,7 +27,7 @@ class SolutionModel(nn.Module):
     
     def forward(self, x):
         x = nn.Sequential(self.linear1,
-                      nn.ReLU(),
+                      nn.LeakyReLU(),
                       self.linear2,
                       nn.Sigmoid()
             ).forward(x)
@@ -52,7 +52,7 @@ class Solution():
         self.algo_name = 'adadelta'
         self.mini_batch = False
         # Control speed of learning
-        self.learning_rate = 8.5
+        self.learning_rate = 11
         self.weight_decay = 0
         self.momentum = 0.95
         self.coef = 0.99
@@ -85,7 +85,7 @@ class Solution():
         elif name == 'sgd':
             optimizer = optim.SGD(model_param, lr=self.learning_rate, weight_decay=self.weight_decay, momentum=self.momentum, nesterov=self.nesterov_moment)
         elif name == 'adadelta':
-            optimizer = optim.Adadelta(model_param, lr=self.learning_rate, weight_decay=self.weight_decay)
+            optimizer = optim.Adadelta(model_param, lr=self.learning_rate, weight_decay=self.weight_decay, rho=0.8)
         elif name == 'adagrad':
             optimizer = optim.Adagrad(model_param, lr=self.learning_rate, weight_decay=self.weight_decay)
 
