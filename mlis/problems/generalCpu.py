@@ -49,9 +49,10 @@ class Solution():
         self.weight_decay = 0
         self.momentum = 0.95
         self.coef = 0.99
-        self.step = 4
+        self.step = 1
+        self.epoch = 2
         # Control number of hidden neurons
-        self.hidden_size = 95
+        self.hidden_size = 93
         
 
         # Grid search settings, see grid_search_tutorial
