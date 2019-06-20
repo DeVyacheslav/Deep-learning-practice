@@ -21,6 +21,8 @@ class SolutionModel(nn.Module):
         self.hidden_size = solution.hidden_size
         self.linear1 = nn.Linear(input_size, self.hidden_size)
         self.linear2 = nn.Linear(self.hidden_size, output_size)
+        self.bilinear = nn.Bilinear(self.hidden_size, self.hidden_size, output_size)
+        self.loss_ = 'BCEloss'
 
     
     def forward(self, x):
@@ -33,7 +35,10 @@ class SolutionModel(nn.Module):
 
     def calc_error(self, output, target):
         # This is loss function
-        result = nn.BCELoss()(output, target)
+        if self.loss_ == 'BCEloss':
+            result = nn.BCELoss()(output, target)
+        elif self.loss_ == 'square':
+            result = ((output-target)**2).sum()
         # result = (-1.0 * (target * torch.log(output) + (1.0 - target) * torch.log(1.0 - output))).sum()
         # result = ((output-target)**2).sum()
         return  result
@@ -44,8 +49,10 @@ class SolutionModel(nn.Module):
 
 class Solution():
     def __init__(self):
+        self.algo_name = 'adadelta'
+        self.mini_batch = False
         # Control speed of learning
-        self.learning_rate = 2
+        self.learning_rate = 5
         self.weight_decay = 0
         self.momentum = 0.95
         self.coef = 0.99
@@ -53,6 +60,8 @@ class Solution():
         self.epoch = 2
         # Control number of hidden neurons
         self.hidden_size = 93
+        self.weight_init = False
+        self.nesterov_moment = False
         
 
         # Grid search settings, see grid_search_tutorial
@@ -67,6 +76,20 @@ class Solution():
         self.iter = 0
         # This fields indicate how many times to run with same arguments
         self.iter_number = 1
+
+    def get_optimizer(self, optimization_name, model_param):
+        name = str.lower(optimization_name)
+
+        if name == 'adam':
+            optimizer = optim.Adam(model_param, lr=self.learning_rate, weight_decay=self.weight_decay)
+        elif name == 'sgd':
+            optimizer = optim.SGD(model_param, lr=self.learning_rate, weight_decay=self.weight_decay, momentum=self.momentum, nesterov=self.nesterov_moment)
+        elif name == 'adadelta':
+            optimizer = optim.Adadelta(model_param, lr=self.learning_rate, weight_decay=self.weight_decay)
+        elif name == 'adagrad':
+            optimizer = optim.Adagrad(model_param, lr=self.learning_rate, weight_decay=self.weight_decay)
+
+        return optimizer
 
     # Return trained model
     def train_model(self, train_data, train_target, context):
@@ -94,19 +117,25 @@ class Solution():
             self.grid_search_tutorial()
 
         model = SolutionModel(train_data.size(1), train_target.size(1), self)
-        # model.apply(weights_init_uniform_rule)
+
+        if self.weight_init:
+            model.apply(weights_init_uniform_rule)
 
         # Optimizer used for training neural network
         # sm.SolutionManager.print_hint("Hint[2]: Learning rate is too small", context.step)
-        optimizer = optim.SGD(model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay, momentum=self.momentum)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, self.step, self.coef)
+        # optimizer = optim.SGD(model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay, momentum=self.momentum, nesterov=self.nesterov_moment)
+        optimizer = self.get_optimizer(self.algo_name, model.parameters())
+        scheduler = None
+        if self.algo_name == 'sgd':
+            scheduler = optim.lr_scheduler.StepLR(optimizer, self.step, self.coef)
         # model.parameters()...gradient set to zero
         # optimizer.zero_grad()
         while True:
             # Report step, so we know how many steps
             context.increase_step()
             # model.parameters()...gradient set to zero
-            optimizer.zero_grad()
+            if self.mini_batch:
+                optimizer.zero_grad()
 
             # evaluate model => model.forward(data)
 
@@ -126,7 +155,7 @@ class Solution():
             total = predict.view(-1).size(0)
             # No more time left or learned everything, stop training
             time_left = context.get_timer().get_time_left()
-            if time_left < 0.1 or correct == total:
+            if time_left < 0.1 or correct == total or context.step > 200:
                 break
             # calculate error
             error = model.calc_error(output, train_target)
@@ -138,7 +167,9 @@ class Solution():
                 break
             # update model: model.parameters() -= lr * gradient
             optimizer.step()
-            scheduler.step()
+            
+            if scheduler:
+                scheduler.step()
 
         if self.grid_search:
             res = context.step if correct == total else 1000000
