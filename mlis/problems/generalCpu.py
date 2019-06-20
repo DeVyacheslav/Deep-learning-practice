@@ -85,8 +85,8 @@ class Solution():
                 m.bias.data.fill_(0.001)
 
         # Uncommend next line to understand grid search
-        # self.grid_search_tutorial()
-        # Model represent our neural network
+        if run_grid_search:
+            self.grid_search_tutorial()
 
         model = SolutionModel(train_data.size(1), train_target.size(1), self)
         # model.apply(weights_init_uniform_rule)
@@ -128,8 +128,15 @@ class Solution():
             error.backward()
             # print progress of the learning
             self.print_stats(context.step, error, correct, total)
+            if  run_grid_search and context.step > 50:
+                break
             # update model: model.parameters() -= lr * gradient
             optimizer.step()
+            scheduler.step()
+
+        if self.grid_search:
+            res = context.step if correct == total else 1000000
+            self.grid_search.add_result('steps', res)
 
         return model
 
@@ -198,7 +205,11 @@ run_grid_search = False
 # Uncomment next line if you want to run grid search
 # run_grid_search = True
 if run_grid_search:
-    gs.GridSearch().run(Config(), case_number=-1, random_order=False, verbose=True)
+    grid_search = gs.GridSearch()
+    grid_search.run(Config(), case_number=3, random_order=False, verbose=True)
+    results = grid_search.get_all_results('steps')
+    results = sorted((sum(value)/len(value), key) for key, value in results.items())
+    print(results)
 else:
     # If you want to run specific case, put number here
     sm.SolutionManager().run(Config(), case_number=-1)
