@@ -38,15 +38,19 @@ class SolutionModel(nn.Module):
         x = nn.Sequential(self.linear1,
                       nn.ReLU6(),
                       self.batch1,
+
                       self.linear3,
                       nn.ReLU6(),
                       self.batch3,
+
                       self.linear4,
                       nn.ReLU6(),
                       self.batch4,
+
                       self.linear5, 
                       nn.ReLU6(),
                       self.batch5,
+                      
                       self.linear2,
                       nn.Sigmoid()
             ).forward(x)
@@ -71,8 +75,8 @@ class Solution():
         self.algo_name = 'adam'
         self.mini_batch = True
         # Control speed of learning
-        self.learning_rate = 0.01
-        self.weight_decay = 0.0001
+        self.learning_rate = 0.021
+        self.weight_decay = 0.000001
         self.momentum = 0.95
         self.coef = 0.99
         self.step = 1
