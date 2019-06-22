@@ -125,7 +125,7 @@ class Solution():
         def init_weights(m):
             if type(m) == nn.Linear:
                 torch.nn.init.xavier_uniform_(m.weight)
-                m.bias.data.fill_(0.01)
+                m.bias.data.fill_(0.0)
         def weights_init_uniform_rule(m):
             classname = m.__class__.__name__
             # for every Linear layer in a model..
@@ -144,7 +144,7 @@ class Solution():
         model = SolutionModel(train_data.size(1), train_target.size(1), self)
         model.train()
         if self.weight_init:
-            model.apply(weights_init_uniform_rule)
+            model.apply(init_weights)
 
         # Optimizer used for training neural network
         # sm.SolutionManager.print_hint("Hint[2]: Learning rate is too small", context.step)
