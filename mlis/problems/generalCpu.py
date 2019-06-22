@@ -17,17 +17,36 @@ class SolutionModel(nn.Module):
     def __init__(self, input_size, output_size, solution):
         super(SolutionModel, self).__init__()
         self.input_size = input_size
+        self.output_size = output_size
         # sm.SolutionManager.print_hint("Hint[1]: Increase hidden size")
         self.hidden_size = solution.hidden_size
         self.linear1 = nn.Linear(input_size, self.hidden_size)
-        self.linear2 = nn.Linear(self.hidden_size, output_size)
-        self.bilinear = nn.Bilinear(self.hidden_size, self.hidden_size, output_size)
+        self.linear3 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.linear4 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.linear5 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.linear2 = nn.Linear(self.hidden_size, self.output_size)
+
+        self.batch1 = nn.BatchNorm1d(self.hidden_size, track_running_stats=False)
+        self.batch3 = nn.BatchNorm1d(self.hidden_size, track_running_stats=False)
+        self.batch4 = nn.BatchNorm1d(self.hidden_size, track_running_stats=False)
+        self.batch5 = nn.BatchNorm1d(self.hidden_size, track_running_stats=False)
+
         self.loss_ = 'BCEloss'
 
     
     def forward(self, x):
         x = nn.Sequential(self.linear1,
-                      nn.LeakyReLU(),
+                      nn.ReLU6(),
+                      self.batch1,
+                      self.linear3,
+                      nn.ReLU6(),
+                      self.batch3,
+                      self.linear4,
+                      nn.ReLU6(),
+                      self.batch4,
+                      self.linear5, 
+                      nn.ReLU6(),
+                      self.batch5,
                       self.linear2,
                       nn.Sigmoid()
             ).forward(x)
@@ -49,27 +68,33 @@ class SolutionModel(nn.Module):
 
 class Solution():
     def __init__(self):
-        self.algo_name = 'adadelta'
-        self.mini_batch = False
+        self.algo_name = 'adam'
+        self.mini_batch = True
         # Control speed of learning
-        self.learning_rate = 11
-        self.weight_decay = 0
+        self.learning_rate = 0.01
+        self.weight_decay = 0.0001
         self.momentum = 0.95
         self.coef = 0.99
         self.step = 1
         self.epoch = 2
         # Control number of hidden neurons
-        self.hidden_size = 93
-        self.weight_init = False
+        self.hidden_size = 54
+        self.weight_init = True
         self.nesterov_moment = False
+        self.rho = 0.8 # adadelta
         
 
         # Grid search settings, see grid_search_tutorial
-        self.coef_grid = [0.95, 0.99]
-        self.step_grid = [3, 4]
-        self.momentum_grid = [0.85, 0.95]
-        self.learning_rate_grid = [0.1, 0.5, 0.9, 1.5, 2, 2.5]
-        self.hidden_size_grid = [85, 95]
+        # self.coef_grid = [0.85, 0.9, 0.95, 0.99]
+        # self.step_grid = [1, 2, 3, 4]
+        # self.momentum_grid = [0.65, 0.9, 0.95, 0.99]
+        # self.weight_decay_grid = [0, 0.01, 0.001, 0.00001]
+        # self.rho_grid = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99]
+        self.learning_rate_grid = [0.0001, 0.001, 0.005, 0.01, 0.1, 0.05, 0.009] #[0.1, 0.01, 0.001,1.5, 1, 2, 3]
+        # self.weight_init_grid = [True, False]
+        # self.nesterov_moment_grid = [True, False]
+        self.hidden_size_grid = [50,51,52,53,54]
+        # self.loss__grid = ['BCEloss', 'square']
         # grid search will initialize this field
         self.grid_search = None
         # grid search will initialize this field
@@ -85,7 +110,7 @@ class Solution():
         elif name == 'sgd':
             optimizer = optim.SGD(model_param, lr=self.learning_rate, weight_decay=self.weight_decay, momentum=self.momentum, nesterov=self.nesterov_moment)
         elif name == 'adadelta':
-            optimizer = optim.Adadelta(model_param, lr=self.learning_rate, weight_decay=self.weight_decay, rho=0.8)
+            optimizer = optim.Adadelta(model_param, lr=self.learning_rate, weight_decay=self.weight_decay, rho=self.rho)
         elif name == 'adagrad':
             optimizer = optim.Adagrad(model_param, lr=self.learning_rate, weight_decay=self.weight_decay)
 
@@ -117,7 +142,7 @@ class Solution():
             self.grid_search_tutorial()
 
         model = SolutionModel(train_data.size(1), train_target.size(1), self)
-
+        model.train()
         if self.weight_init:
             model.apply(weights_init_uniform_rule)
 
@@ -137,14 +162,12 @@ class Solution():
             if self.mini_batch:
                 optimizer.zero_grad()
 
+            indices = torch.randperm(train_data.size()[0])
+
+            train_data = train_data[indices]
+            train_target = train_target[indices]
+
             # evaluate model => model.forward(data)
-
-            temp = torch.cat((train_data, train_target), 1)
-            temp = temp[torch.randperm(temp.size()[0])]
-
-            train_data = temp[:, :-1]
-            train_target = temp[:, -1:]
-
             output = model(train_data)
             
             # if x < 0.5 predict 0 else predict 1
@@ -242,11 +265,31 @@ run_grid_search = False
 # Uncomment next line if you want to run grid search
 # run_grid_search = True
 if run_grid_search:
+    # grid_search = gs.GridSearch()
+    # grid_search.run(Config(), case_number=2, random_order=False, verbose=True)
+    # results = grid_search.get_all_results('steps')
+    # results = sorted((sum(value)/len(value), key) for key, value in results.items())
+    # print(results)
+    # exit()
+    cases_results = {}
+    for i in range(1, 11):
     grid_search = gs.GridSearch()
     grid_search.run(Config(), case_number=3, random_order=False, verbose=True)
     results = grid_search.get_all_results('steps')
-    results = sorted((sum(value)/len(value), key) for key, value in results.items())
-    print(results)
+
+        # results = sorted((sum(value)/len(value), key) for key, value in results.items())
+        if i == 1:
+            for key in results:
+                cases_results[key] = results[key][0]
+        else:
+            for key in results:
+                cases_results[key] += results[key][0]
+
+    for key in cases_results:
+        cases_results[key] = cases_results[key] / 10
+    
+    cases_results = sorted((value, key) for key, value in cases_results.items())
+    print(cases_results)
 else:
     # If you want to run specific case, put number here
     sm.SolutionManager().run(Config(), case_number=-1)
