@@ -51,6 +51,8 @@ class SolutionModel(nn.Module):
             return nn.ReLU()
         elif name == 'relu6':
             return nn.ReLU6()
+        elif name == 'leakyrelu':
+            return nn.LeakyReLU()
         elif name == 'sigmoid':
             return nn.Sigmoid()
         
@@ -61,13 +63,10 @@ class SolutionModel(nn.Module):
 
     def calc_error(self, output, target):
         # This is loss function
-        
         if self.loss_ == 'BCEloss':
             result = nn.BCELoss()(output, target)
         elif self.loss_ == 'square':
             result = ((output-target)**2).sum()
-        # result = (-1.0 * (target * torch.log(output) + (1.0 - target) * torch.log(1.0 - output))).sum()
-        # result = ((output-target)**2).sum()
         return  result
 
     def calc_predict(self, output):
@@ -76,25 +75,25 @@ class SolutionModel(nn.Module):
 
 class Solution():
     def __init__(self):
-        self.layer_count = 5
-        self.batch_size = 128
+        self.layer_count = 4
+        self.batch_size = 512
         self.hidden_activation = 'relu6'
         self.output_activation = 'sigmoid'
         self.algo_name = 'adam'
         self.mini_batch = True
         # Control speed of learning
-        self.learning_rate = 0.01
+        self.learning_rate = 0.0088
         self.weight_decay = 0
         self.momentum = 0.9
         self.coef = 0.99
         self.step = 1
-        self.epoch = 10
+        self.epoch = 20
         # Control number of hidden neurons
-        self.hidden_size = 105
-        self.weight_init = True
+        self.hidden_size = 43
+        self.weight_init = False
         self.nesterov_moment = False
         self.rho = 0.8 # adadelta
-
+        
         # Grid search settings, see grid_search_tutorial
         # self.coef_grid = [0.85, 0.9, 0.95, 0.99]
         # self.step_grid = [1, 2, 3, 4]
@@ -165,28 +164,53 @@ class Solution():
         number_of_batches = int(train_data.size(0)/self.batch_size)
         batches_counter = 0
 
-        for i in range(self.epoch):
+        while True:
             # Report step, so we know how many steps
             context.increase_step()
+
             indices = torch.randperm(train_data.size()[0])
 
             train_data = train_data[indices]
             train_target = train_target[indices]
+            if self.mini_batch:
+                train_data_batches = torch.utils.data.DataLoader(train_data, self.batch_size)
+                train_target_batches = torch.utils.data.DataLoader(train_target, self.batch_size)
 
-            train_data_batches = torch.utils.data.DataLoader(train_data, self.batch_size)
-            train_target_batches = torch.utils.data.DataLoader(train_target, self.batch_size)
+                for x, y in zip(train_data_batches, train_target_batches):
+                    # model.parameters()...gradient set to zero
+                    optimizer.zero_grad()
 
-            for x, y in zip(train_data_batches, train_target_batches):
+                    # evaluate model => model.forward(data)
+                    output = model(x)
+
+                    # if x < 0.5 predict 0 else predict 1
+                    predict = model.calc_predict(output)
+                    # Number of correct predictions
+                    correct = predict.eq(y.view_as(predict)).long().sum().item()
+                    # Total number of needed predictions
+                    total = predict.view(-1).size(0)
+                    # No more time left or learned everything, stop training
+                    time_left = context.get_timer().get_time_left()
+                    if time_left < 0.1:
+                        break
+                    # calculate error
+                    error = model.calc_error(output, y)
+
+                    # calculate deriviative of model.forward() and put it in model.parameters()...gradient
+                    error.backward()
+                        # update model: model.parameters() -= lr * gradient
+                    optimizer.step()
+            else:
                 # model.parameters()...gradient set to zero
                 optimizer.zero_grad()
 
                 # evaluate model => model.forward(data)
-                output = model(x)
+                output = model(train_data)
 
                 # if x < 0.5 predict 0 else predict 1
                 predict = model.calc_predict(output)
                 # Number of correct predictions
-                correct = predict.eq(y.view_as(predict)).long().sum().item()
+                correct = predict.eq(train_target.view_as(predict)).long().sum().item()
                 # Total number of needed predictions
                 total = predict.view(-1).size(0)
                 # No more time left or learned everything, stop training
@@ -194,33 +218,17 @@ class Solution():
                 if time_left < 0.1:
                     break
                 # calculate error
-                error = model.calc_error(output, y)
+                error = model.calc_error(output, train_target)
 
-                residue = (output.data-y.data).abs()
-                if residue.max() < 0.55:
-                    batches_counter += 1
-                    if batches_counter >= number_of_batches:
-                        break
-                else:
-                    batches_counter = 0
                 # calculate deriviative of model.forward() and put it in model.parameters()...gradient
                 error.backward()
                     # update model: model.parameters() -= lr * gradient
                 optimizer.step()
             # print progress of the learning
             self.print_stats(context.step, error, correct, total)
-            # evaluate model => model.forward(data)
-            output = model(train_data)
 
-            # if x < 0.5 predict 0 else predict 1
-            predict = model.calc_predict(output)
-            # Number of correct predictions
-            correct = predict.eq(train_target.view_as(predict)).long().sum().item()
-            # Total number of needed predictions
-            total = predict.view(-1).size(0)
-            # No more time left or learned everything, stop training
             time_left = context.get_timer().get_time_left()
-            if time_left < 0.1 or correct == total:
+            if time_left < 0.1:
                 break
 
            
@@ -319,9 +327,34 @@ class Config:
 
 run_grid_search = False
 # Uncomment next line if you want to run grid search
-#run_grid_search = True
+# run_grid_search = True
 if run_grid_search:
-    gs.GridSearch().run(Config(), case_number=1, random_order=False, verbose=False)
+    grid_search = gs.GridSearch()
+    grid_search.run(Config(), case_number=3, random_order=False, verbose=True)
+    results = grid_search.get_all_results('steps')
+    results = sorted((sum(value)/len(value), key) for key, value in results.items())
+    print(results)
+    exit()
+
+    cases_results = {}
+    for i in range(1, 11):
+        grid_search = gs.GridSearch()
+        grid_search.run(Config(), case_number=i, random_order=False, verbose=False)
+        results = grid_search.get_all_results('steps')
+
+        # results = sorted((sum(value)/len(value), key) for key, value in results.items())
+        if i == 1:
+            for key in results:
+                cases_results[key] = results[key][0]
+        else:
+            for key in results:
+                cases_results[key] += results[key][0]
+
+    for key in cases_results:
+        cases_results[key] = cases_results[key] / 10
+    
+    cases_results = sorted((value, key) for key, value in cases_results.items())
+    print(cases_results)
 else:
     # If you want to run specific case, put number here
     sm.SolutionManager().run(Config(), case_number=-1)
