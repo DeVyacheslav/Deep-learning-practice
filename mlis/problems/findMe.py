@@ -173,10 +173,21 @@ class Solution():
             train_data = train_data[indices]
             train_target = train_target[indices]
             if self.mini_batch:
-                train_data_batches = torch.utils.data.DataLoader(train_data, self.batch_size)
-                train_target_batches = torch.utils.data.DataLoader(train_target, self.batch_size)
+                indices = torch.randperm(train_data.size()[0])
 
-                for x, y in zip(train_data_batches, train_target_batches):
+                train_data = train_data[indices]
+                train_target = train_target[indices]
+                # train_data_batches = torch.utils.data.DataLoader(train_data, self.batch_size)
+                # train_target_batches = torch.utils.data.DataLoader(train_target, self.batch_size)
+                data_size = train_data.size(0)
+                # for x, y in zip(train_data_batches, train_target_batches):
+                for i in range(int(data_size/self.batch_size)):
+                    #print(i,i*self.batch_size, i+self.batch_size)
+                    start = i*self.batch_size
+                    end = start + self.batch_size if start + self.batch_size < data_size else data_size
+                    # print(start, end)
+                    x = train_data[start: end]
+                    y = train_target[start: end]
                     # model.parameters()...gradient set to zero
                     optimizer.zero_grad()
 
@@ -228,7 +239,9 @@ class Solution():
             self.print_stats(context.step, error, correct, total)
 
             time_left = context.get_timer().get_time_left()
-            if time_left < 0.1:
+
+            time_limit = 0.3 if train_data.size(1) > 35 else 1.15 if train_data.size(1) > 23 else 1.5
+            if time_left < time_limit:
                 break
 
            
