@@ -22,7 +22,7 @@ class SolutionModel(nn.Module):
         self.input_size_data = input_size
         self.ensemble_enabled = solution.ensemble_enabled
 
-        self.input_size = 8 if self.ensemble_enabled else input_size
+        self.input_size = input_size // 8
         self.output_size = output_size
         self.first_hidden_size = solution.first_hidden_size
         self.hidden_size = solution.hidden_size
@@ -36,32 +36,26 @@ class SolutionModel(nn.Module):
         self.hidden_activation = solution.hidden_activation
         self.output_activation = solution.output_activation
         
-        layer_sizes = [self.input_size, *self.hidden_sizes, self.output_size]
-        args = []
-
-        for i in range(1, len(layer_sizes)):
-            args.append(nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
-
-            # if i == len(layer_sizes) - 1:
-            args.append(nn.BatchNorm1d(layer_sizes[i], track_running_stats=False)) 
-            args.append(self.get_activation(self.hidden_activations[i - 1] if i != len(layer_sizes) - 1 else self.output_activation))
-
-            # if i != len(layer_sizes) - 1:
-            #     args.append(nn.BatchNorm1d(layer_sizes[i], track_running_stats=False)) 
-            # if i == 1:
-            #     args.append(nn.Dropout(0.2))
+        layer_sizes = [self.input_size, 45, self.output_size]
+        layer_sizes2 = [8,*self.hidden_sizes, 1]    
         
-        
-        # if self.ensemble_enabled:
-        #     self.models = []
-        #     for i in range(self.input_size_data // 8):
-        #         self.models.append(nn.Sequential(*args))
-        # else:
-        
-        self.model = nn.Sequential(*args)
+        def get_module_list(layer_sizes, hidden_activations):
+            args = []
+            for i in range(1, len(layer_sizes)):
+                args.append(nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
+                args.append(nn.BatchNorm1d(layer_sizes[i], track_running_stats=False)) 
+                args.append(self.get_activation(hidden_activations[i - 1] if i != len(layer_sizes) - 1 else self.output_activation))
+            
+            return args
+            
+        self.hidden_activations2 = ['relu'] + ['relu'] * self.hidden_size
 
-        # print(self.model)
-        # exit()
+        modules = get_module_list(layer_sizes, self.hidden_activations)
+        modules2 = get_module_list(layer_sizes2, self.hidden_activations)
+
+        self.model = nn.Sequential(*modules)
+        self.model2 = nn.Sequential(*modules2)
+
 
         
 
@@ -81,20 +75,10 @@ class SolutionModel(nn.Module):
 
     def forward(self, x):
         x = (x - 0.5)*2.0
-        voters_count = self.input_size_data // 8
-        voter_inputs = torch.split(x, 8, dim=1)
-        result = torch.zeros(x.shape[0], 1)
-        
-        if self.ensemble_enabled:
-            i = 0
-            for x in voter_inputs:
-                y = self.model.forward(x)
-                i += 1
-                result = result.add(y)
+        output = self.model2(x.view(-1, 8))
+        self.model2.output = output.view(-1, self.input_size)
 
-            return torch.div(result, voters_count) #Variable(torch.div(result, voters_count), requires_grad=True)
-        else:
-            return self.model.forward(x)
+        return self.model(self.model2.output)
 
     def calc_error(self, output, target):
         self.loss_ = str.lower(self.loss_)
@@ -117,22 +101,22 @@ class SolutionModel(nn.Module):
 class Solution():
     def __init__(self):
         self.layer_count = 3
-        self.batch_size = 2048
+        self.batch_size = 256
         self.ensemble_enabled = True
     
-        self.algo_name = 'adam'
+        self.algo_name = 'rmsprop'
         self.loss = 'bceloss'
         self.init_type = 'xavier'
         # Control speed of learning
-        self.learning_rate = 0.004
-        self.weight_decay = 1e-4
+        self.learning_rate = 0.01
+        self.weight_decay = 0
         self.momentum = 0.9
         self.coef = 0.99
         self.step = 1
         self.epoch = 20
        
         # Control number of hidden neurons
-        self.first_hidden_size = 80
+        self.first_hidden_size = 45
         self.hidden_size = 40
         self.hidden_layer_count = self.layer_count - 1
         self.hidden_sizes = [self.first_hidden_size] + [self.hidden_size] * (self.hidden_layer_count - 1)
@@ -154,8 +138,8 @@ class Solution():
         # self.weight_decay_grid = [0, 0.01, 0.001, 0.00001]
         # self.rho_grid = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99]
         # self.batch_size_grid = [64, 128, 254, 512, 1024]
-        self.algo_name_grid = ['adam', 'sgd', 'rmsprop']
-        self.learning_rate_grid = [0.1, 0.01, 0.001, 0.03, 0.04, 0.2, 0.3, 0.4] #[0.021, 0.1, 0.01, 0.001, 0.03, 0.04, 0.2, 0.3, 0.4, 0.009, 0.09, 0.0009]#[0.0001, 0.001, 0.005, 0.01, 0.1, 0.05, 0.009] #[0.1, 0.01, 0.001,1.5, 1, 2, 3]
+        # self.algo_name_grid = ['adam', 'sgd', 'rmsprop']
+        self.learning_rate_grid = [0.011, 0.012, 0.013, 0.14, 0.15, 0.01, 0.001] #[0.1, 0.01, 0.001,0.003,0.004, 0.03, 0.04, 0.2, 0.3, 0.4] #[0.021, 0.1, 0.01, 0.001, 0.03, 0.04, 0.2, 0.3, 0.4, 0.009, 0.09, 0.0009]#[0.0001, 0.001, 0.005, 0.01, 0.1, 0.05, 0.009] #[0.1, 0.01, 0.001,1.5, 1, 2, 3]
         # self.weight_init_grid = [True, False]
         # self.nesterov_moment_grid = [True, False]
         # self.layer_count_grid = [3,4,5,6,7,8,9,10]
@@ -189,7 +173,6 @@ class Solution():
 
     # Return trained model
     def train_model(self, train_data, train_target, context):
-        
         def init_normal(m):
             if type(m) == nn.Linear:
                 nn.init.uniform_(m.weight, a=-1, b=1)
@@ -197,7 +180,8 @@ class Solution():
         def init_weights(m):
             if type(m) == nn.Linear:
                 torch.nn.init.xavier_uniform_(m.weight)
-                m.bias.data.fill_(0.)
+                torch.nn.init.uniform_(m.bias, a=-1, b=1)
+                # m.bias.data.fill_(0.01)
         def weights_init_uniform_rule(m):
             classname = m.__class__.__name__
             # for every Linear layer in a model..
@@ -222,11 +206,11 @@ class Solution():
             self.grid_search_tutorial()
 
         model = SolutionModel(train_data.size(1), train_target.size(1), self)
+
         model.train()
         if self.weight_init:
             model.apply(get_init_type(self.init_type))
-        # for param in model.parameters():
-        #     nn.init.uniform_(param, -1.0, +1.0)
+
         # Optimizer used for training neural network
         optimizer = self.get_optimizer(self.algo_name, model.parameters())
 
@@ -240,13 +224,18 @@ class Solution():
         while True:
             index = context.step % batches_count
             
-            # if index == batches_count: 
-            #     epoch += 1
-            #     print('Epoch {}'.format(epoch))
-            #     indices = torch.randperm(train_data.size()[0])
+            if index == batches_count-1: 
+                # epoch += 1
+                # print('Epoch {}'.format(epoch))
+                indices = torch.randperm(train_data.size()[0])
 
-            #     train_data, train_target = train_data[indices], train_target[indices]
+                train_data, train_target = train_data[indices], train_target[indices]
             
+
+            # train_dataset = torch.utils.data.TensorDataset(train_data, train_target)
+            # train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=self.batch_size, shuffle=True)
+
+            # for x, y in train_loader:
             # Report step, so we know how many steps
             context.increase_step()
 
@@ -286,23 +275,18 @@ class Solution():
 
             # calculate deriviative of model.forward() and put it in model.parameters()...gradient
             error.backward()
-                # update model: model.parameters() -= lr * gradient
+            # update model: model.parameters() -= lr * gradient
             optimizer.step()
-            # scheduler.step(error.item())
 
-            # with torch.no_grad():
-            #     predict = model.calc_predict(output)
-            #     correct = predict.eq(y.view_as(predict)).long().sum().item()
-            #     total = predict.view(-1).size(0)
 
             # print progress of the learning
-            # self.print_stats(context.step, error, correct, total)
+            self.print_stats(context.step, error, correct, total)
 
             time_left = context.get_timer().get_time_left()
 
-            # time_limit = 0.1 #if train_data.size(1) > 35 else 1.15 if train_data.size(1) > 23 else 1.5
-            # if time_left < time_limit:
-            #     break
+            time_limit = 0.1 #if train_data.size(1) > 35 else 1.15 if train_data.size(1) > 23 else 1.5
+            if time_left < time_limit:
+                break
 
            
                 
@@ -394,12 +378,12 @@ run_grid_search = False
 # Uncomment next line if you want to run grid search
 # run_grid_search = True
 if run_grid_search:
-    grid_search = gs.GridSearch()
-    grid_search.run(Config(), case_number=2, random_order=False, verbose=True)
-    results = grid_search.get_all_results('steps')
-    results = sorted((sum(value)/len(value), key) for key, value in results.items())
-    print(results)
-    exit()
+    # grid_search = gs.GridSearch()
+    # grid_search.run(Config(), case_number=4, random_order=False, verbose=True)
+    # results = grid_search.get_all_results('steps')
+    # results = sorted((sum(value)/len(value), key) for key, value in results.items())
+    # print(results)
+    # exit()
 
     cases_results = {}
     for i in range(1, 11):
