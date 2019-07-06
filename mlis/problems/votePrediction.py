@@ -108,7 +108,7 @@ class Solution():
         self.loss = 'bceloss'
         self.init_type = 'xavier'
         # Control speed of learning
-        self.learning_rate = 0.01
+        self.learning_rate = 0.011
         self.weight_decay = 0
         self.momentum = 0.9
         self.coef = 0.99
@@ -280,13 +280,13 @@ class Solution():
 
 
             # print progress of the learning
-            self.print_stats(context.step, error, correct, total)
+            # self.print_stats(context.step, error, correct, total)
 
-            time_left = context.get_timer().get_time_left()
+            # time_left = context.get_timer().get_time_left()
 
-            time_limit = 0.1 #if train_data.size(1) > 35 else 1.15 if train_data.size(1) > 23 else 1.5
-            if time_left < time_limit:
-                break
+            # time_limit = 0.1 #if train_data.size(1) > 35 else 1.15 if train_data.size(1) > 23 else 1.5
+            # if time_left < time_limit:
+            #     break
 
            
                 
