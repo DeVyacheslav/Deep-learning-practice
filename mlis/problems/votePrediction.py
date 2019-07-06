@@ -219,7 +219,7 @@ class Solution():
 
         batches_count = train_data.size(0)//self.batch_size
         good_counter = 0
-        good_limit = batches_count
+        good_limit = 6 #batches_count
         # epoch = 0
         while True:
             index = context.step % batches_count
