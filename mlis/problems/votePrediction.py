@@ -13,39 +13,57 @@ import torch.nn.functional as F
 import torch.optim as optim
 from ..utils import solutionmanager as sm
 from ..utils import gridsearch as gs
+import numpy as np
+from torch.autograd import Variable
 
 class SolutionModel(nn.Module):
     def __init__(self, input_size, output_size, solution):
         super(SolutionModel, self).__init__()
-        self.input_size = input_size
+        self.input_size_data = input_size
+        self.ensemble_enabled = solution.ensemble_enabled
+
+        self.input_size = 8 if self.ensemble_enabled else input_size
         self.output_size = output_size
-        # sm.SolutionManager.print_hint("Hint[1]: Increase hidden size")
+        self.first_hidden_size = solution.first_hidden_size
         self.hidden_size = solution.hidden_size
+
+        self.loss_ = solution.loss
+
+        self.hidden_sizes = solution.hidden_sizes
+        self.hidden_activations = solution.hidden_activations
 
         self.layer_count = solution.layer_count
         self.hidden_activation = solution.hidden_activation
         self.output_activation = solution.output_activation
-
-        self.linears = nn.ModuleList(
-            [nn.Linear(self.input_size if i == 0 else self.hidden_size, 
-                self.hidden_size if i != self.layer_count - 1 else self.output_size) 
-            for i in range(self.layer_count)]
-        )
-
-        self.batch_norms = nn.ModuleList(
-            [nn.BatchNorm1d(self.hidden_size, track_running_stats=False) for i in range(self.layer_count)]
-        )
-
+        
+        layer_sizes = [self.input_size, *self.hidden_sizes, self.output_size]
         args = []
-        for i in range(self.layer_count):
-            args.append(self.linears[i])
-            if i != self.layer_count - 1:
-                args.append(self.batch_norms[i]) 
-            args.append(self.get_activation(self.hidden_activation if i != self.layer_count - 1 else self.output_activation))
 
+        for i in range(1, len(layer_sizes)):
+            args.append(nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
+
+            # if i == len(layer_sizes) - 1:
+            args.append(nn.BatchNorm1d(layer_sizes[i], track_running_stats=False)) 
+            args.append(self.get_activation(self.hidden_activations[i - 1] if i != len(layer_sizes) - 1 else self.output_activation))
+
+            # if i != len(layer_sizes) - 1:
+            #     args.append(nn.BatchNorm1d(layer_sizes[i], track_running_stats=False)) 
+            # if i == 1:
+            #     args.append(nn.Dropout(0.2))
+        
+        
+        # if self.ensemble_enabled:
+        #     self.models = []
+        #     for i in range(self.input_size_data // 8):
+        #         self.models.append(nn.Sequential(*args))
+        # else:
+        
         self.model = nn.Sequential(*args)
 
-        self.loss_ = 'BCEloss'
+        # print(self.model)
+        # exit()
+
+        
 
     def get_activation(self, name):
         name = str.lower(name)
@@ -62,14 +80,34 @@ class SolutionModel(nn.Module):
         return nn.ReLU()
 
     def forward(self, x):
-        return self.model.forward(x)
+        x = (x - 0.5)*2.0
+        voters_count = self.input_size_data // 8
+        voter_inputs = torch.split(x, 8, dim=1)
+        result = torch.zeros(x.shape[0], 1)
+        
+        if self.ensemble_enabled:
+            i = 0
+            for x in voter_inputs:
+                y = self.model.forward(x)
+                i += 1
+                result = result.add(y)
+
+            return torch.div(result, voters_count) #Variable(torch.div(result, voters_count), requires_grad=True)
+        else:
+            return self.model.forward(x)
 
     def calc_error(self, output, target):
+        self.loss_ = str.lower(self.loss_)
         # This is loss function
-        if self.loss_ == 'BCEloss':
+        if self.loss_ == 'bceloss':
             result = nn.BCELoss()(output, target)
         elif self.loss_ == 'square':
             result = ((output-target)**2).sum()
+        elif self.loss_ == 'mseloss':
+            result = nn.MSELoss(reduction='mean')(output, target)
+        else:
+            raise 'Error: loss {} not found.'.format(self.loss_)
+
         return  result
 
     def calc_predict(self, output):
@@ -78,22 +116,34 @@ class SolutionModel(nn.Module):
 
 class Solution():
     def __init__(self):
-        self.layer_count = 4
+        self.layer_count = 3
         self.batch_size = 512
-        self.hidden_activation = 'relu6'
-        self.output_activation = 'sigmoid'
+        self.ensemble_enabled = True
+    
         self.algo_name = 'adam'
-        self.mini_batch = True
+        self.loss = 'bceloss'
+        self.init_type = 'xavier'
         # Control speed of learning
-        self.learning_rate = 0.0088
-        self.weight_decay = 0
+        self.learning_rate = 0.0013
+        self.weight_decay = 0e-7
         self.momentum = 0.9
         self.coef = 0.99
         self.step = 1
         self.epoch = 20
+       
         # Control number of hidden neurons
-        self.hidden_size = 43
-        self.weight_init = False
+        self.first_hidden_size = 80
+        self.hidden_size = 40
+        self.hidden_layer_count = self.layer_count - 1
+        self.hidden_sizes = [self.first_hidden_size] + [self.hidden_size] * (self.hidden_layer_count - 1)
+        
+        self.first_hidden_activation = 'relu6'
+        self.hidden_activation = 'relu6'
+        self.hidden_activations = [self.first_hidden_activation] + [self.hidden_activation] * self.hidden_layer_count
+
+        self.output_activation = 'sigmoid'
+
+        self.weight_init = True
         self.nesterov_moment = False
         self.rho = 0.8 # adadelta
         
@@ -103,10 +153,14 @@ class Solution():
         # self.momentum_grid = [0.65, 0.9, 0.95, 0.99]
         # self.weight_decay_grid = [0, 0.01, 0.001, 0.00001]
         # self.rho_grid = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99]
-        self.learning_rate_grid = [0.021, 0.1, 0.01, 0.001, 0.03, 0.04, 0.2, 0.3, 0.4, 0.009, 0.09, 0.0009]#[0.0001, 0.001, 0.005, 0.01, 0.1, 0.05, 0.009] #[0.1, 0.01, 0.001,1.5, 1, 2, 3]
+        # self.batch_size_grid = [64, 128, 254, 512, 1024]
+        self.algo_name_grid = ['adam', 'sgd', 'rmsprop']
+        self.learning_rate_grid = [0.1, 0.01, 0.001, 0.03, 0.04, 0.2, 0.3, 0.4] #[0.021, 0.1, 0.01, 0.001, 0.03, 0.04, 0.2, 0.3, 0.4, 0.009, 0.09, 0.0009]#[0.0001, 0.001, 0.005, 0.01, 0.1, 0.05, 0.009] #[0.1, 0.01, 0.001,1.5, 1, 2, 3]
         # self.weight_init_grid = [True, False]
         # self.nesterov_moment_grid = [True, False]
-        # self.hidden_size_grid = [i for i in range(25, 55)]#[37,38,39,40,41, 49,50, 51,52,53,54]
+        # self.layer_count_grid = [3,4,5,6,7,8,9,10]
+        # self.first_hidden_size_grid = [16,17,18,19,20,21,22,23,24,25,26, 39,40,41,42,43,44,45]
+        # self.hidden_size_grid = [16, 32, 40, 43]
         # self.loss__grid = ['BCEloss', 'square']
         # grid search will initialize this field
         self.grid_search = None
@@ -119,26 +173,31 @@ class Solution():
         name = str.lower(optimization_name)
 
         if name == 'adam':
-            optimizer = optim.Adam(model_param, lr=self.learning_rate, weight_decay=self.weight_decay)
+            optimizer = optim.Adam(model_param, lr=self.learning_rate,betas=(0.9, 0.999), weight_decay=self.weight_decay)
         elif name == 'sgd':
             optimizer = optim.SGD(model_param, lr=self.learning_rate, weight_decay=self.weight_decay, momentum=self.momentum, nesterov=self.nesterov_moment)
         elif name == 'adadelta':
             optimizer = optim.Adadelta(model_param, lr=self.learning_rate, weight_decay=self.weight_decay, rho=self.rho)
         elif name == 'adagrad':
             optimizer = optim.Adagrad(model_param, lr=self.learning_rate, weight_decay=self.weight_decay)
+        elif name == 'rmsprop':
+            optimizer = optim.RMSprop(model_param, lr=self.learning_rate, weight_decay=self.weight_decay)
+        else:
+            raise 'Error: Optimizer \'{}\' not found.'.format(name)
 
         return optimizer
 
     # Return trained model
     def train_model(self, train_data, train_target, context):
+        
         def init_normal(m):
             if type(m) == nn.Linear:
-                nn.init.uniform_(m.weight)
+                nn.init.uniform_(m.weight, a=-1, b=1)
 
         def init_weights(m):
             if type(m) == nn.Linear:
                 torch.nn.init.xavier_uniform_(m.weight)
-                m.bias.data.fill_(0.0)
+                m.bias.data.fill_(0.)
         def weights_init_uniform_rule(m):
             classname = m.__class__.__name__
             # for every Linear layer in a model..
@@ -148,8 +207,16 @@ class Solution():
                 y = 1.0/np.sqrt(n)
 
                 m.weight.data.uniform_(-y, y)
-                m.bias.data.fill_(0.0)
+                m.bias.data.fill_(0.01)
 
+        def get_init_type(key):
+            types = {
+                'uniform': init_normal,
+                'xavier': init_weights,
+                'uniform_rule': weights_init_uniform_rule
+            }
+
+            return types[key]
         # Uncommend next line to understand grid search
         if run_grid_search:
             self.grid_search_tutorial()
@@ -157,95 +224,85 @@ class Solution():
         model = SolutionModel(train_data.size(1), train_target.size(1), self)
         model.train()
         if self.weight_init:
-            model.apply(init_weights)
-
+            model.apply(get_init_type(self.init_type))
+        # for param in model.parameters():
+        #     nn.init.uniform_(param, -1.0, +1.0)
         # Optimizer used for training neural network
-        # sm.SolutionManager.print_hint("Hint[2]: Learning rate is too small", context.step)
-        # optimizer = optim.SGD(model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay, momentum=self.momentum, nesterov=self.nesterov_moment)
         optimizer = self.get_optimizer(self.algo_name, model.parameters())
 
-        number_of_batches = int(train_data.size(0)/self.batch_size)
-        batches_counter = 0
+        # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [100000])
+        # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
 
+        batches_count = train_data.size(0)//self.batch_size
+        good_counter = 0
+        good_limit = batches_count
+        # epoch = 0
         while True:
+            index = context.step % batches_count
+            
+            if index == 0: 
+                # epoch += 1
+                # print('Epoch {}'.format(epoch))
+                indices = torch.randperm(train_data.size()[0])
+
+                train_data, train_target = train_data[indices], train_target[indices]
+            
             # Report step, so we know how many steps
             context.increase_step()
 
-            indices = torch.randperm(train_data.size()[0])
+            start = index * self.batch_size
+            end = start + self.batch_size
+            # print(end)
+            x = train_data[start: end]
+            y = train_target[start: end]
 
-            train_data = train_data[indices]
-            train_target = train_target[indices]
-            if self.mini_batch:
-                indices = torch.randperm(train_data.size()[0])
+            # model.parameters()...gradient set to zero
+            optimizer.zero_grad()
 
-                train_data = train_data[indices]
-                train_target = train_target[indices]
-                # train_data_batches = torch.utils.data.DataLoader(train_data, self.batch_size)
-                # train_target_batches = torch.utils.data.DataLoader(train_target, self.batch_size)
-                data_size = train_data.size(0)
-                # for x, y in zip(train_data_batches, train_target_batches):
-                for i in range(int(data_size/self.batch_size)):
-                    #print(i,i*self.batch_size, i+self.batch_size)
-                    start = i*self.batch_size
-                    end = start + self.batch_size if start + self.batch_size < data_size else data_size
-                    # print(start, end)
-                    x = train_data[start: end]
-                    y = train_target[start: end]
-                    # model.parameters()...gradient set to zero
-                    optimizer.zero_grad()
+            # evaluate model => model.forward(data)
+            output = model(x)
+            with torch.no_grad():
+                diff = (output - y).abs()
 
-                    # evaluate model => model.forward(data)
-                    output = model(x)
-
-                    # if x < 0.5 predict 0 else predict 1
-                    predict = model.calc_predict(output)
-                    # Number of correct predictions
-                    correct = predict.eq(y.view_as(predict)).long().sum().item()
-                    # Total number of needed predictions
-                    total = predict.view(-1).size(0)
-                    # No more time left or learned everything, stop training
-                    time_left = context.get_timer().get_time_left()
-                    if time_left < 0.1:
+                if diff.max() <  0.3:
+                    good_count += 1
+                    if good_count >= good_limit:
                         break
-                    # calculate error
-                    error = model.calc_error(output, y)
+                else:
+                    good_count = 0
+            # if x < 0.5 predict 0 else predict 1
+            predict = model.calc_predict(output)
+            # Number of correct predictions
+            correct = predict.eq(y.view_as(predict)).long().sum().item()
+            # Total number of needed predictions
+            total = predict.view(-1).size(0)
+            # No more time left or learned everything, stop training
+            time_left = context.get_timer().get_time_left()
 
-                    # calculate deriviative of model.forward() and put it in model.parameters()...gradient
-                    error.backward()
-                        # update model: model.parameters() -= lr * gradient
-                    optimizer.step()
-            else:
-                # model.parameters()...gradient set to zero
-                optimizer.zero_grad()
+            if time_left < 0.1:
+                break
+            # calculate error
+            error = model.calc_error(output, y)
 
-                # evaluate model => model.forward(data)
-                output = model(train_data)
+            # calculate deriviative of model.forward() and put it in model.parameters()...gradient
+            error.backward()
+                # update model: model.parameters() -= lr * gradient
+            optimizer.step()
+            # scheduler.step(error.item())
 
-                # if x < 0.5 predict 0 else predict 1
-                predict = model.calc_predict(output)
-                # Number of correct predictions
-                correct = predict.eq(train_target.view_as(predict)).long().sum().item()
-                # Total number of needed predictions
-                total = predict.view(-1).size(0)
-                # No more time left or learned everything, stop training
-                time_left = context.get_timer().get_time_left()
-                if time_left < 0.1:
-                    break
-                # calculate error
-                error = model.calc_error(output, train_target)
+            # with torch.no_grad():
+            #     predict = model.calc_predict(output)
+            #     correct = predict.eq(y.view_as(predict)).long().sum().item()
+            #     total = predict.view(-1).size(0)
 
-                # calculate deriviative of model.forward() and put it in model.parameters()...gradient
-                error.backward()
-                    # update model: model.parameters() -= lr * gradient
-                optimizer.step()
             # print progress of the learning
             self.print_stats(context.step, error, correct, total)
 
             time_left = context.get_timer().get_time_left()
 
-            time_limit = 0.1 #if train_data.size(1) > 35 else 1.15 if train_data.size(1) > 23 else 1.5
-            if time_left < time_limit:
-                break
+            # time_limit = 0.1 #if train_data.size(1) > 35 else 1.15 if train_data.size(1) > 23 else 1.5
+            # if time_left < time_limit:
+            #     break
 
            
                 
@@ -335,9 +392,34 @@ class Config:
 
 run_grid_search = False
 # Uncomment next line if you want to run grid search
-#run_grid_search = True
+# run_grid_search = True
 if run_grid_search:
-    gs.GridSearch().run(Config(), case_number=1, random_order=False, verbose=False)
+    grid_search = gs.GridSearch()
+    grid_search.run(Config(), case_number=2, random_order=False, verbose=True)
+    results = grid_search.get_all_results('steps')
+    results = sorted((sum(value)/len(value), key) for key, value in results.items())
+    print(results)
+    exit()
+
+    cases_results = {}
+    for i in range(1, 11):
+        grid_search = gs.GridSearch()
+        grid_search.run(Config(), case_number=i, random_order=False, verbose=False)
+        results = grid_search.get_all_results('steps')
+
+        # results = sorted((sum(value)/len(value), key) for key, value in results.items())
+        if i == 1:
+            for key in results:
+                cases_results[key] = results[key][0]
+        else:
+            for key in results:
+                cases_results[key] += results[key][0]
+
+    for key in cases_results:
+        cases_results[key] = cases_results[key] / 10
+    
+    cases_results = sorted((value, key) for key, value in cases_results.items())
+    print(cases_results)
 else:
     # If you want to run specific case, put number here
-    sm.SolutionManager().run(Config(), case_number=10)
+    sm.SolutionManager().run(Config(), case_number=2)
