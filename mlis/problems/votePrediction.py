@@ -117,15 +117,15 @@ class SolutionModel(nn.Module):
 class Solution():
     def __init__(self):
         self.layer_count = 3
-        self.batch_size = 512
+        self.batch_size = 2048
         self.ensemble_enabled = True
     
         self.algo_name = 'adam'
         self.loss = 'bceloss'
         self.init_type = 'xavier'
         # Control speed of learning
-        self.learning_rate = 0.0013
-        self.weight_decay = 0e-7
+        self.learning_rate = 0.004
+        self.weight_decay = 1e-4
         self.momentum = 0.9
         self.coef = 0.99
         self.step = 1
@@ -240,12 +240,12 @@ class Solution():
         while True:
             index = context.step % batches_count
             
-            if index == 0: 
-                # epoch += 1
-                # print('Epoch {}'.format(epoch))
-                indices = torch.randperm(train_data.size()[0])
+            # if index == batches_count: 
+            #     epoch += 1
+            #     print('Epoch {}'.format(epoch))
+            #     indices = torch.randperm(train_data.size()[0])
 
-                train_data, train_target = train_data[indices], train_target[indices]
+            #     train_data, train_target = train_data[indices], train_target[indices]
             
             # Report step, so we know how many steps
             context.increase_step()
@@ -264,7 +264,7 @@ class Solution():
             with torch.no_grad():
                 diff = (output - y).abs()
 
-                if diff.max() <  0.3:
+                if diff.max() <  0.4:
                     good_count += 1
                     if good_count >= good_limit:
                         break
@@ -296,7 +296,7 @@ class Solution():
             #     total = predict.view(-1).size(0)
 
             # print progress of the learning
-            self.print_stats(context.step, error, correct, total)
+            # self.print_stats(context.step, error, correct, total)
 
             time_left = context.get_timer().get_time_left()
 
@@ -422,4 +422,4 @@ if run_grid_search:
     print(cases_results)
 else:
     # If you want to run specific case, put number here
-    sm.SolutionManager().run(Config(), case_number=2)
+    sm.SolutionManager().run(Config(), case_number=-1)
