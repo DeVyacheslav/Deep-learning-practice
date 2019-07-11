@@ -58,7 +58,7 @@ class SolutionModel(nn.Module):
         self.dense_input_size = max_pool_size**4 * self.conv_output_size
         
         conv_layer_sizes = [self.input_size, 10, self.conv_output_size]
-        dense_layer_sizes = [self.dense_input_size, 30, 30 , self.output_size]
+        dense_layer_sizes = [self.dense_input_size, 30, 56 , self.output_size]
 
         args = []
         for i in range(1, len(conv_layer_sizes)):
@@ -74,7 +74,7 @@ class SolutionModel(nn.Module):
             args.append(nn.Linear(dense_layer_sizes[i - 1], dense_layer_sizes[i]))
             args.append(nn.BatchNorm1d(dense_layer_sizes[i], track_running_stats=False))
             if i != len(dense_layer_sizes) - 1:
-                args.append(self.get_activation('relu6'))
+                args.append(self.get_activation('relu'))
         
         args.append(self.get_activation(self.output_activation))
 
@@ -132,7 +132,7 @@ class Solution():
         self.loss = 'nll_loss'
         self.init_type = 'xavier'
         # Control speed of learning
-        self.learning_rate = 0.005
+        self.learning_rate = 0.01
         self.weight_decay = 0
         self.momentum = 0.9
         self.coef = 0.99
