@@ -14,8 +14,12 @@ from ..utils import gridsearch as gs
 import numpy as np
 
 class InputTransform(nn.Module):
+    def __init__(self, input_size):
+        super(InputTransform, self).__init__()
+        self.input_size = input_size
+
     def forward(self, x):
-        return x.view(-1, 4*4*20)
+        return x.view(-1, self.input_size)
 
 class InputDebug(nn.Module):
     def __init__(self, exit_enabled=False):
@@ -51,23 +55,26 @@ class SolutionModel(nn.Module):
         max_pool_size = 2
 
         self.conv_output_size = 30
+        self.dense_input_size = max_pool_size**4 * self.conv_output_size
+        
         conv_layer_sizes = [self.input_size, 10, self.conv_output_size]
-        dense_layer_sizes = [4 * max_pool_size**2 * self.conv_output_size, 40, self.output_size]
+        dense_layer_sizes = [self.dense_input_size, 30, 30 , self.output_size]
 
         args = []
         for i in range(1, len(conv_layer_sizes)):
-            args.append(InputDebug())
+            # args.append(InputDebug())
             args.append(nn.Conv2d(conv_layer_sizes[i - 1], conv_layer_sizes[i], 5, 1))
-            args.append(InputDebug(exit_enabled=True))
+            # args.append(InputDebug(exit_enabled=True))
             args.append(self.get_activation(self.hidden_activations[i - 1]))
             args.append(nn.MaxPool2d(max_pool_size, max_pool_size))
 
-        args.append(InputTransform())
+        args.append(InputTransform(self.dense_input_size))
 
         for i in range(1, len(dense_layer_sizes)):
             args.append(nn.Linear(dense_layer_sizes[i - 1], dense_layer_sizes[i]))
+            args.append(nn.BatchNorm1d(dense_layer_sizes[i], track_running_stats=False))
             if i != len(dense_layer_sizes) - 1:
-                args.append(self.get_activation('relu'))
+                args.append(self.get_activation('relu6'))
         
         args.append(self.get_activation(self.output_activation))
 
@@ -93,9 +100,6 @@ class SolutionModel(nn.Module):
         raise 'Error: activation {} not found.'.format(name)
 
     def forward(self, x):
-        # x = (x - 0.5)*2.0
-        # self.model2.output = output.view(-1, self.input_size)
-
         return self.model(x)
 
     def calc_error(self, output, target):
@@ -116,7 +120,7 @@ class SolutionModel(nn.Module):
 
     def calc_predict(self, output):
         # Simple round output to predict value
-        return output.max(1, keepdim=True)[1]#.argmax(dim=1)
+        return output.argmax(dim=1)
 
 class Solution():
     def __init__(self):
@@ -128,7 +132,7 @@ class Solution():
         self.loss = 'nll_loss'
         self.init_type = 'xavier'
         # Control speed of learning
-        self.learning_rate = 0.02
+        self.learning_rate = 0.005
         self.weight_decay = 0
         self.momentum = 0.9
         self.coef = 0.99
@@ -402,9 +406,34 @@ class Config:
 
 run_grid_search = False
 # Uncomment next line if you want to run grid search
-#run_grid_search = True
+# run_grid_search = True
 if run_grid_search:
-    gs.GridSearch().run(Config(), case_number=1, random_order=False, verbose=False)
+    grid_search = gs.GridSearch()
+    grid_search.run(Config(), case_number=3, random_order=False, verbose=True)
+    results = grid_search.get_all_results('steps')
+    results = sorted((sum(value)/len(value), key) for key, value in results.items())
+    print(results)
+    exit()
+
+    cases_results = {}
+    for i in range(1, 11):
+        grid_search = gs.GridSearch()
+        grid_search.run(Config(), case_number=i, random_order=False, verbose=False)
+        results = grid_search.get_all_results('steps')
+
+        # results = sorted((sum(value)/len(value), key) for key, value in results.items())
+        if i == 1:
+            for key in results:
+                cases_results[key] = results[key][0]
+        else:
+            for key in results:
+                cases_results[key] += results[key][0]
+
+    for key in cases_results:
+        cases_results[key] = cases_results[key] / 10
+    
+    cases_results = sorted((value, key) for key, value in cases_results.items())
+    print(cases_results)
 else:
     # If you want to run specific case, put number here
-    sm.SolutionManager().run(Config(), case_number=3)
+    sm.SolutionManager().run(Config(), case_number=-1)
