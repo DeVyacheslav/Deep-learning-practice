@@ -58,13 +58,11 @@ class SolutionModel(nn.Module):
         self.dense_input_size = max_pool_size**4 * self.conv_output_size
         
         conv_layer_sizes = [self.input_size, 10, self.conv_output_size]
-        dense_layer_sizes = [self.dense_input_size, 30, 56 , self.output_size]
+        dense_layer_sizes = [self.dense_input_size, *self.hidden_sizes , self.output_size]
 
         args = []
         for i in range(1, len(conv_layer_sizes)):
-            # args.append(InputDebug())
             args.append(nn.Conv2d(conv_layer_sizes[i - 1], conv_layer_sizes[i], 5, 1))
-            # args.append(InputDebug(exit_enabled=True))
             args.append(self.get_activation(self.hidden_activations[i - 1]))
             args.append(nn.MaxPool2d(max_pool_size, max_pool_size))
 
@@ -79,8 +77,6 @@ class SolutionModel(nn.Module):
         args.append(self.get_activation(self.output_activation))
 
         self.model = nn.Sequential(*args)
-        # print(self.model)
-        # exit()
         
 
     def get_activation(self, name):
@@ -134,14 +130,10 @@ class Solution():
         # Control speed of learning
         self.learning_rate = 0.01
         self.weight_decay = 0
-        self.momentum = 0.9
-        self.coef = 0.99
-        self.step = 1
-        self.epoch = 20
        
         # Control number of hidden neurons
-        self.first_hidden_size = 45
-        self.hidden_size = 40
+        self.first_hidden_size = 30
+        self.hidden_size = 56
         self.hidden_layer_count = self.layer_count - 1
         self.hidden_sizes = [self.first_hidden_size] + [self.hidden_size] * (self.hidden_layer_count - 1)
         
@@ -239,8 +231,6 @@ class Solution():
         # Optimizer used for training neural network
         optimizer = self.get_optimizer(self.algo_name, model.parameters())
 
-        # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [100000])
-        # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
 
         batches_count = train_data.size(0)//self.batch_size
         good_counter = 0
@@ -248,19 +238,7 @@ class Solution():
         # epoch = 0
         while True:
             index = context.step % batches_count
-            
-            # if index == batches_count-1: 
-            #     # epoch += 1
-            #     # print('Epoch {}'.format(epoch))
-            #     indices = torch.randperm(train_data.size()[0])
 
-            #     train_data, train_target = train_data[indices], train_target[indices]
-            
-
-            # train_dataset = torch.utils.data.TensorDataset(train_data, train_target)
-            # train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=self.batch_size, shuffle=True)
-
-            # for x, y in train_loader:
             # Report step, so we know how many steps
             context.increase_step()
 
@@ -275,19 +253,10 @@ class Solution():
 
             # evaluate model => model.forward(data)
             output = model(x)
-            # with torch.no_grad():
-            #     diff = (output - y).abs()
 
-            #     if diff.max() <  0.4:
-            #         good_count += 1
-            #         if good_count >= good_limit:
-            #             break
-            #     else:
-            #         good_count = 0
             # if x < 0.5 predict 0 else predict 1
             predict = model.calc_predict(output)
             # Number of correct predictions
-
             correct = predict.eq(y.view_as(predict)).long().sum().item()
             # Total number of needed predictions
             total = predict.view(-1).size(0)
@@ -307,13 +276,6 @@ class Solution():
 
             # print progress of the learning
             self.print_stats(context.step, error, correct, total)
-
-            # time_left = context.get_timer().get_time_left()
-
-            # time_limit = 0.1 #if train_data.size(1) > 35 else 1.15 if train_data.size(1) > 23 else 1.5
-            # if time_left < time_limit:
-            #     break
-
            
                 
         if self.grid_search:
