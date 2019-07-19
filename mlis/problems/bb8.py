@@ -9,6 +9,32 @@ from ..utils import solutionmanager as sm
 from ..utils import gridsearch as gs
 import numpy as np
 
+class InputTransform(nn.Module):
+    def __init__(self, input_size):
+        super(InputTransform, self).__init__()
+        self.input_size = input_size
+
+    def forward(self, x):
+        return x.view(-1, self.input_size)
+
+class InputTransformEmbed(nn.Module):
+    def __init__(self):
+        super(InputTransformEmbed, self).__init__()
+
+    def forward(self, x):
+        return x.t().long()
+        
+class InputDebug(nn.Module):
+    def __init__(self, exit_enabled=False):
+        super(InputDebug, self).__init__()
+        self.exit_enabled = exit_enabled
+
+    def forward(self, x):
+        print(x, x.size())#, len(x[0]), len(x[0][0]) , len(x[0][0][0]))
+        if self.exit_enabled:
+            exit()
+        return x
+
 class SolutionModel(nn.Module):
     def __init__(self, input_size, output_size, solution):
         super(SolutionModel, self).__init__()
@@ -29,15 +55,38 @@ class SolutionModel(nn.Module):
         self.hidden_activation = solution.hidden_activation
         self.output_activation = solution.output_activation
         
-        layer_sizes = [self.input_size, *self.hidden_sizes, self.output_size]
+        self.embed_size = input_size // 4
+        self.embed = nn.Embedding(input_size, self.embed_size)
+        self.GRU = nn.GRU(self.embed_size, self.embed_size, self.layer_count)
+        self.LSTM = nn.LSTM(self.embed_size, self.embed_size, self.layer_count)
+        self.fc = nn.Linear(self.embed_size, 1)
+
+        # layer_sizes = [self.input_size, *self.hidden_sizes, self.output_size]
+        layer_sizes = [self.embed_size, *self.hidden_sizes, self.output_size]
         layer_sizes2 = [8,*self.hidden_sizes, 1]    
         
         def get_module_list(layer_sizes, hidden_activations):
             args = []
+
+            # args.append(self.embed)
+            # args.append(nn.GRU(self.embed_size, 256))
+            # args.append(InputTransformEmbed())
+            # # args.append(InputDebug(True))
+            # args.append(self.embed)
+            # args.append(self.LSTM)
+            # args.append(InputDebug(True))
             for i in range(1, len(layer_sizes)):
-                args.append(nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
-                args.append(nn.BatchNorm1d(layer_sizes[i], track_running_stats=False)) 
-                args.append(self.get_activation(hidden_activations[i - 1] if i != len(layer_sizes) - 1 else self.output_activation))
+                if i == len(layer_sizes) - 1:
+                    args.append(nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
+                else:
+                    pass
+                    # args.append(nn.LSTM(3, 3))
+                    # args.append(nn.GRUCell(layer_sizes[i - 1], layer_sizes[i]))
+                    # args.append(InputDebug(True))
+                    # args.append(nn.Dropout(0.8))
+                
+                # args.append(nn.BatchNorm1d(layer_sizes[i], track_running_stats=False))
+            args.append(self.get_activation(hidden_activations[i - 1] if i != len(layer_sizes) - 1 else self.output_activation))
             
             return args
             
@@ -72,12 +121,30 @@ class SolutionModel(nn.Module):
         return nn.ReLU()
 
     def forward(self, x):
-        x = (x - 0.5)*2.
+        batch_size = x.size(0)
+
         x = x.float()
-        # print(x)
+        # x = (x - 0.5)*2.0
+        # x = x.view(-1,1)
+        x = x.t()
+        
+        embed = self.embed(x.long())
+        # print(embed.size())
         # exit()
-        # output = self.model2(x)
-        # self.model2.output = output.view(-1, self.input_size)
+        # embed = embed.view(x.size(1), x.size(0), self.embed_size)
+        # print(embed.size())
+        # exit()
+        output, hidden = self.GRU(embed)
+        # print(hidden[self.layer_count-1], output[self.input_size-1])
+        # exit()
+        fc_output = self.fc(output[self.input_size-1])
+        fc_output = nn.Sigmoid()(fc_output)
+
+        return fc_output #self.model(x)
+
+    def forward9(self, x):
+        x = x.float()
+        # x = (x - 0.5)*2.0
 
         return self.model(x)
 
@@ -92,6 +159,8 @@ class SolutionModel(nn.Module):
             result = nn.MSELoss(reduction='mean')(output, target)
         elif self.loss_ == 'nll_loss':
             result = nn.NLLLoss()(output, target)
+        elif self.loss_ == 'crossentropyloss':
+            result = nn.CrossEntropyLoss()(output, target)
         else:
             raise 'Error: loss {} not found.'.format(self.loss_)
 
@@ -104,14 +173,14 @@ class SolutionModel(nn.Module):
 class Solution():
     def __init__(self):
         self.layer_count = 3
-        self.batch_size = 128
+        self.batch_size = 64
         self.ensemble_enabled = True
     
         self.algo_name = 'adam'
         self.loss = 'bceloss'
         self.init_type = 'xavier'
         # Control speed of learning
-        self.learning_rate = 0.011
+        self.learning_rate = 0.01
         self.weight_decay = 0
         self.momentum = 0.9
         self.coef = 0.99
@@ -119,8 +188,8 @@ class Solution():
         self.epoch = 20
        
         # Control number of hidden neurons
-        self.first_hidden_size = 45
-        self.hidden_size = 40
+        self.first_hidden_size = 15
+        self.hidden_size = 15
         self.hidden_layer_count = self.layer_count - 1
         self.hidden_sizes = [self.first_hidden_size] + [self.hidden_size] * (self.hidden_layer_count - 1)
         
@@ -257,6 +326,8 @@ class Solution():
 
             # evaluate model => model.forward(data)
             output = model(x)
+            # print(output[0], output.size(0), output[0].size(0))
+            # exit()
             # with torch.no_grad():
             #     # print(output, y)
             #     # exit()
@@ -493,9 +564,34 @@ class Config:
 
 run_grid_search = False
 # Uncomment next line if you want to run grid search
-#run_grid_search = True
+# run_grid_search = True
 if run_grid_search:
-    gs.GridSearch().run(Config(), case_number=0, random_order=False, verbose=False)
+    grid_search = gs.GridSearch()
+    grid_search.run(Config(), case_number=3, random_order=False, verbose=True)
+    results = grid_search.get_all_results('steps')
+    results = sorted((sum(value)/len(value), key) for key, value in results.items())
+    print(results)
+    exit()
+
+    cases_results = {}
+    for i in range(1, 11):
+        grid_search = gs.GridSearch()
+        grid_search.run(Config(), case_number=i, random_order=False, verbose=False)
+        results = grid_search.get_all_results('steps')
+
+        # results = sorted((sum(value)/len(value), key) for key, value in results.items())
+        if i == 1:
+            for key in results:
+                cases_results[key] = results[key][0]
+        else:
+            for key in results:
+                cases_results[key] += results[key][0]
+
+    for key in cases_results:
+        cases_results[key] = cases_results[key] / 10
+    
+    cases_results = sorted((value, key) for key, value in cases_results.items())
+    print(cases_results)
 else:
     # If you want to run specific case, put number here
     sm.SolutionManager().run(Config(), case_number=-1)
