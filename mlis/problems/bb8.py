@@ -55,50 +55,57 @@ class SolutionModel(nn.Module):
         self.hidden_activation = solution.hidden_activation
         self.output_activation = solution.output_activation
         
-        self.embed_size = input_size // 4
+        self.embed_size = input_size // 4 if input_size // 4 <= 16 else 16
+        self.conv = nn.Conv1d(self.input_size, self.embed_size, 3)
         self.embed = nn.Embedding(input_size, self.embed_size)
-        self.GRU = nn.GRU(self.embed_size, self.embed_size, self.layer_count)
-        self.LSTM = nn.LSTM(self.embed_size, self.embed_size, self.layer_count)
+
+        # self.embed_size = self.input_size
+
+        # self.embed_size = self.embed_size // 2 -1
+        self.GRU = nn.GRU(self.embed_size, self.embed_size, self.layer_count, dropout=0.2)
+        self.LSTM = nn.LSTM(self.embed_size, self.embed_size, self.layer_count, dropout=0.2)   
+        # self.conv = nn.Conv1d(self.input_size, self.embed_size, 3)
         self.fc = nn.Linear(self.embed_size, 1)
 
         # layer_sizes = [self.input_size, *self.hidden_sizes, self.output_size]
-        layer_sizes = [self.embed_size, *self.hidden_sizes, self.output_size]
-        layer_sizes2 = [8,*self.hidden_sizes, 1]    
+        # layer_sizes = [self.embed_size, *self.hidden_sizes, self.output_size]
+        # layer_sizes2 = [8,*self.hidden_sizes, 1]    
         
-        def get_module_list(layer_sizes, hidden_activations):
-            args = []
+        # def get_module_list(layer_sizes, hidden_activations):
+        #     args = []
 
-            # args.append(self.embed)
-            # args.append(nn.GRU(self.embed_size, 256))
-            # args.append(InputTransformEmbed())
-            # # args.append(InputDebug(True))
-            # args.append(self.embed)
-            # args.append(self.LSTM)
-            # args.append(InputDebug(True))
-            for i in range(1, len(layer_sizes)):
-                if i == len(layer_sizes) - 1:
-                    args.append(nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
-                else:
-                    pass
-                    # args.append(nn.LSTM(3, 3))
-                    # args.append(nn.GRUCell(layer_sizes[i - 1], layer_sizes[i]))
-                    # args.append(InputDebug(True))
-                    # args.append(nn.Dropout(0.8))
+        #     # args.append(self.embed)
+        #     # args.append(nn.GRU(self.embed_size, 256))
+        #     # args.append(InputTransformEmbed())
+        #     # # args.append(InputDebug(True))
+        #     # args.append(self.embed)
+        #     # args.append(self.LSTM)
+        #     # args.append(InputDebug(True))
+        #     for i in range(1, len(layer_sizes)):
+        #         if i == len(layer_sizes) - 1:
+        #             args.append(nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
+        #         else:
+        #             pass
+        #             # args.append(nn.LSTM(3, 3))
+        #             # args.append(nn.GRUCell(layer_sizes[i - 1], layer_sizes[i]))
+        #             # args.append(InputDebug(True))
+        #             # args.append(nn.Dropout(0.8))
                 
-                # args.append(nn.BatchNorm1d(layer_sizes[i], track_running_stats=False))
-            args.append(self.get_activation(hidden_activations[i - 1] if i != len(layer_sizes) - 1 else self.output_activation))
+        #         # args.append(nn.BatchNorm1d(layer_sizes[i], track_running_stats=False))
+        #     args.append(self.get_activation(hidden_activations[i - 1] if i != len(layer_sizes) - 1 else self.output_activation))
             
-            return args
+        #     return args
             
-        self.hidden_activations2 = ['relu'] + ['relu'] * self.hidden_size
+        # self.hidden_activations2 = ['relu'] + ['relu'] * self.hidden_size
 
-        modules = get_module_list(layer_sizes, self.hidden_activations)
-        modules2 = get_module_list(layer_sizes2, self.hidden_activations)
+        # modules = get_module_list(layer_sizes, self.hidden_activations)
+        # modules2 = get_module_list(layer_sizes2, self.hidden_activations)
 
-        self.model = nn.Sequential(*modules)
-        self.model2 = nn.Sequential(*modules2)
+        # self.model = nn.Sequential(*modules)
+        # self.model2 = nn.Sequential(*modules2)
 
         # print(self.model)
+        # print(self.GRU)
         # exit()
 
 
@@ -121,7 +128,11 @@ class SolutionModel(nn.Module):
         return nn.ReLU()
 
     def forward(self, x):
+        if not self.training and torch.cuda.is_available():
+            x = x.cuda()
+
         batch_size = x.size(0)
+        feature_size = x.size(1)
 
         x = x.float()
         # x = (x - 0.5)*2.0
@@ -129,16 +140,29 @@ class SolutionModel(nn.Module):
         x = x.t()
         
         embed = self.embed(x.long())
+        # print(embed.view(64,self.embed_size,256).size())
+        # exit()
+
+        # embed = self.conv(embed)
+        # embed = nn.ReLU()(embed)
+        
+
+        # embed = nn.MaxPool1d(2)(embed)
+
         # print(embed.size())
         # exit()
         # embed = embed.view(x.size(1), x.size(0), self.embed_size)
         # print(embed.size())
         # exit()
+        # embed = nn.Dropout(0.2)(embed)
         output, hidden = self.GRU(embed)
-        # print(hidden[self.layer_count-1], output[self.input_size-1])
+        # output = nn.Dropout(0.2)(output)
+        # print(output.size(), hidden.size())
         # exit()
-        fc_output = self.fc(output[self.input_size-1])
+        fc_output = self.fc(output[feature_size - 1])
         fc_output = nn.Sigmoid()(fc_output)
+        if not self.training and torch.cuda.is_available():
+            fc_output = fc_output.cpu()
 
         return fc_output #self.model(x)
 
@@ -172,7 +196,7 @@ class SolutionModel(nn.Module):
 
 class Solution():
     def __init__(self):
-        self.layer_count = 3
+        self.layer_count = 1
         self.batch_size = 64
         self.ensemble_enabled = True
     
@@ -180,7 +204,7 @@ class Solution():
         self.loss = 'bceloss'
         self.init_type = 'xavier'
         # Control speed of learning
-        self.learning_rate = 0.01
+        self.learning_rate = 0.03
         self.weight_decay = 0
         self.momentum = 0.9
         self.coef = 0.99
@@ -283,7 +307,12 @@ class Solution():
         # print(train_data, train_target)
         # exit()
         model = SolutionModel(train_data.size(1), train_target.size(1), self)
-
+        # print(torch.cuda.is_available())
+        if torch.cuda.is_available():
+            model.cuda()
+            train_data = train_data.cuda()
+            train_target = train_target.cuda()
+            
         model.train()
         if self.weight_init:
             model.apply(get_init_type(self.init_type))
@@ -593,5 +622,11 @@ if run_grid_search:
     cases_results = sorted((value, key) for key, value in cases_results.items())
     print(cases_results)
 else:
+     # this part is needed for GPU initialization (so that it doesn't take place
+    # inside the first test)
+    a = torch.tensor(np.ones((1, 10000)), dtype=torch.float32)
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    # device = torch.device('cpu')
+    a.to(device)
     # If you want to run specific case, put number here
     sm.SolutionManager().run(Config(), case_number=-1)
