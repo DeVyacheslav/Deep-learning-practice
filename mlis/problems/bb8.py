@@ -59,54 +59,9 @@ class SolutionModel(nn.Module):
         self.conv = nn.Conv1d(self.input_size, self.embed_size, 3)
         self.embed = nn.Embedding(input_size, self.embed_size)
 
-        # self.embed_size = self.input_size
-
-        # self.embed_size = self.embed_size // 2 -1
         self.GRU = nn.GRU(self.embed_size, self.embed_size, self.layer_count, dropout=0.2)
         self.LSTM = nn.LSTM(self.embed_size, self.embed_size, self.layer_count, dropout=0.2)   
-        # self.conv = nn.Conv1d(self.input_size, self.embed_size, 3)
         self.fc = nn.Linear(self.embed_size, 1)
-
-        # layer_sizes = [self.input_size, *self.hidden_sizes, self.output_size]
-        # layer_sizes = [self.embed_size, *self.hidden_sizes, self.output_size]
-        # layer_sizes2 = [8,*self.hidden_sizes, 1]    
-        
-        # def get_module_list(layer_sizes, hidden_activations):
-        #     args = []
-
-        #     # args.append(self.embed)
-        #     # args.append(nn.GRU(self.embed_size, 256))
-        #     # args.append(InputTransformEmbed())
-        #     # # args.append(InputDebug(True))
-        #     # args.append(self.embed)
-        #     # args.append(self.LSTM)
-        #     # args.append(InputDebug(True))
-        #     for i in range(1, len(layer_sizes)):
-        #         if i == len(layer_sizes) - 1:
-        #             args.append(nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
-        #         else:
-        #             pass
-        #             # args.append(nn.LSTM(3, 3))
-        #             # args.append(nn.GRUCell(layer_sizes[i - 1], layer_sizes[i]))
-        #             # args.append(InputDebug(True))
-        #             # args.append(nn.Dropout(0.8))
-                
-        #         # args.append(nn.BatchNorm1d(layer_sizes[i], track_running_stats=False))
-        #     args.append(self.get_activation(hidden_activations[i - 1] if i != len(layer_sizes) - 1 else self.output_activation))
-            
-        #     return args
-            
-        # self.hidden_activations2 = ['relu'] + ['relu'] * self.hidden_size
-
-        # modules = get_module_list(layer_sizes, self.hidden_activations)
-        # modules2 = get_module_list(layer_sizes2, self.hidden_activations)
-
-        # self.model = nn.Sequential(*modules)
-        # self.model2 = nn.Sequential(*modules2)
-
-        # print(self.model)
-        # print(self.GRU)
-        # exit()
 
 
         
@@ -135,42 +90,20 @@ class SolutionModel(nn.Module):
         feature_size = x.size(1)
 
         x = x.float()
-        # x = (x - 0.5)*2.0
-        # x = x.view(-1,1)
+
         x = x.t()
         
         embed = self.embed(x.long())
-        # print(embed.view(64,self.embed_size,256).size())
-        # exit()
-
-        # embed = self.conv(embed)
-        # embed = nn.ReLU()(embed)
-        
-
-        # embed = nn.MaxPool1d(2)(embed)
-
-        # print(embed.size())
-        # exit()
-        # embed = embed.view(x.size(1), x.size(0), self.embed_size)
-        # print(embed.size())
-        # exit()
-        # embed = nn.Dropout(0.2)(embed)
+ 
         output, hidden = self.GRU(embed)
-        # output = nn.Dropout(0.2)(output)
-        # print(output.size(), hidden.size())
-        # exit()
+       
         fc_output = self.fc(output[feature_size - 1])
         fc_output = nn.Sigmoid()(fc_output)
         if not self.training and torch.cuda.is_available():
             fc_output = fc_output.cpu()
 
-        return fc_output #self.model(x)
+        return fc_output
 
-    def forward9(self, x):
-        x = x.float()
-        # x = (x - 0.5)*2.0
-
-        return self.model(x)
 
     def calc_error(self, output, target):
         self.loss_ = str.lower(self.loss_)
@@ -301,13 +234,10 @@ class Solution():
         if run_grid_search:
             self.grid_search_tutorial()
 
-        train_target = train_target.float() #train_target.type(torch.LongTensor)
-        # train_data = train_data.float() #train_data.type(torch.FloatTensor)
+        train_target = train_target.float()
 
-        # print(train_data, train_target)
-        # exit()
         model = SolutionModel(train_data.size(1), train_target.size(1), self)
-        # print(torch.cuda.is_available())
+
         if torch.cuda.is_available():
             model.cuda()
             train_data = train_data.cuda()
@@ -319,9 +249,6 @@ class Solution():
 
         # Optimizer used for training neural network
         optimizer = self.get_optimizer(self.algo_name, model.parameters())
-
-        # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [100000])
-        # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
 
         batches_count = train_data.size(0)//self.batch_size
         good_counter = 0
@@ -338,9 +265,6 @@ class Solution():
                 train_data, train_target = train_data[indices], train_target[indices]
             
 
-            # train_dataset = torch.utils.data.TensorDataset(train_data, train_target)
-            # train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=self.batch_size, shuffle=True)
-
             # for x, y in train_loader:
             # Report step, so we know how many steps
             context.increase_step()
@@ -355,19 +279,7 @@ class Solution():
 
             # evaluate model => model.forward(data)
             output = model(x)
-            # print(output[0], output.size(0), output[0].size(0))
-            # exit()
-            # with torch.no_grad():
-            #     # print(output, y)
-            #     # exit()
-            #     diff = (output - y).abs()
-
-            #     if diff.max() <  0.4:
-            #         good_count += 1
-            #         if good_count >= good_limit:
-            #             break
-            #     else:
-            #         good_count = 0
+            
             # if x < 0.5 predict 0 else predict 1
             predict = model.calc_predict(output)
             # Number of correct predictions
@@ -386,16 +298,6 @@ class Solution():
             error.backward()
             # update model: model.parameters() -= lr * gradient
             optimizer.step()
-
-
-            # print progress of the learning
-            # self.print_stats(context.step, error, correct, total)
-
-            # time_left = context.get_timer().get_time_left()
-
-            # time_limit = 0.1 #if train_data.size(1) > 35 else 1.15 if train_data.size(1) > 23 else 1.5
-            # if time_left < time_limit:
-            #     break
 
            
                 
